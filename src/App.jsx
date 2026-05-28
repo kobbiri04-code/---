@@ -4,7 +4,8 @@ import FileUploader from './components/FileUploader';
 import MapDashboard from './components/MapDashboard';
 import SidebarControls from './components/SidebarControls';
 import useDispatchStore from './store/dispatchStore';
-import { SAMPLE_STORES, SAMPLE_DRIVERS } from './data/sampleData';
+import { SAMPLE_DRIVERS } from './data/sampleData';
+import { REAL_STORE_DATA } from './data/storeData';
 
 /**
  * 앱 메인 레이아웃
@@ -18,10 +19,10 @@ import { SAMPLE_STORES, SAMPLE_DRIVERS } from './data/sampleData';
 export default function App() {
   const { stores, setStores, setDrivers, isGeocoding, geocodingProgress } = useDispatchStore();
 
-  // 샘플 데이터 자동 로드 (파일 업로드 전 즉시 시연 가능)
+  // 실제 엑셀 데이터 자동 로드
   useEffect(() => {
     if (stores.length === 0) {
-      setStores(SAMPLE_STORES);
+      setStores(REAL_STORE_DATA);
       setDrivers(SAMPLE_DRIVERS);
     }
   }, []);
@@ -56,6 +57,9 @@ export default function App() {
                 <Database size={10} className="text-blue-400" />
                 <span>차량 한도: 12,000,000원</span>
               </div>
+              <div className="flex items-center gap-1.5 text-[10px] text-teal-300 bg-teal-900/40 border border-teal-700/50 px-2.5 py-1 rounded-full">
+                <span>📊 실매장 {REAL_STORE_DATA.length}개 로드됨</span>
+              </div>
             </div>
           </div>
 
@@ -75,13 +79,14 @@ export default function App() {
               </button>
               <div className="absolute right-0 top-8 w-64 bg-slate-800 border border-slate-700 rounded-xl p-3 shadow-2xl z-50 hidden group-hover:block text-xs text-slate-300 space-y-1.5">
                 <div className="font-bold text-white mb-2">📋 사용 방법</div>
-                <div>1️⃣ 상단에서 엑셀 파일을 업로드하거나 샘플 데이터로 시작</div>
+                <div>1️⃣ 상단에서 엑셀 파일을 업로드하거나 기본 데이터 사용</div>
                 <div>2️⃣ 우측 패널에서 평일/주말 모드 선택</div>
                 <div>3️⃣ <strong className="text-blue-300">올가미 ON</strong> → 지도 드래그로 매장 선택</div>
                 <div>4️⃣ 또는 마커를 직접 <strong className="text-blue-300">클릭</strong>하여 개별 선택</div>
                 <div>5️⃣ 적재율 확인 후 기사 배정 및 <strong className="text-teal-300">배차 확정</strong></div>
                 <div className="border-t border-slate-700 pt-1.5 mt-1.5 text-slate-500 text-[10px]">
-                  🟠 주황/빨강 마커: 주말 매출 30% 이상 급증 피크 매장
+                  🟠 주황/빨강 마커: 주말 매출 30% 이상 급증 피크 매장<br/>
+                  ⚫ 회색 마커: 종결 매장
                 </div>
               </div>
             </div>
