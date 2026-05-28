@@ -369,17 +369,12 @@ export default function MapDashboard() {
         zoomControl={true}
         attributionControl={true}
       >
-        {/*
-          ── 한글 지도 타일 옵션 ──
-          1) Vworld (국토지리정보원) - 한국 최고 품질 한글 지도
-             무료, 한글 도로명/지명 완벽 표기
-        */}
+        {/* OpenStreetMap Japan - 한글 지명/도로명 표기 지원 */}
         <TileLayer
-          url="https://xdworld.vworld.kr/2d/Base/service/{z}/{x}/{y}.png"
-          attribution='© <a href="https://www.vworld.kr">Vworld</a> | 국토지리정보원'
+          url="https://tile.openstreetmap.jp/{z}/{x}/{y}.png"
+          attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, Tile by <a href="https://openstreetmap.jp">OSM Japan</a>'
           maxZoom={19}
           tileSize={256}
-          errorTileUrl="https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
         />
 
         <MapInitializer />
