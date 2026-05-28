@@ -105,6 +105,17 @@ const useDispatchStore = create((set, get) => ({
       confirmedCourses: s.confirmedCourses.filter((c) => c.id !== courseId),
     })),
 
+  /** 매장 데이터만 초기화 (선택·코스 포함) */
+  resetStores: () =>
+    set({
+      stores: [],
+      selectedStoreIds: new Set(),
+      confirmedCourses: [],
+    }),
+
+  /** 기사 데이터만 초기화 */
+  resetDrivers: () => set({ drivers: [] }),
+
   /** 전체 초기화 */
   resetAll: () =>
     set({
