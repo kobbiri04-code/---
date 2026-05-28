@@ -369,11 +369,12 @@ export default function MapDashboard() {
         zoomControl={true}
         attributionControl={true}
       >
-        {/* OpenStreetMap Japan - 한글 지명/도로명 표기 지원 */}
+        {/* Google Maps — 한국어(hl=ko) 설정으로 네이버 스타일과 유사한 한글 지도 */}
         <TileLayer
-          url="https://tile.openstreetmap.jp/{z}/{x}/{y}.png"
-          attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, Tile by <a href="https://openstreetmap.jp">OSM Japan</a>'
-          maxZoom={19}
+          url="https://mt{s}.google.com/vt/lyrs=m&hl=ko&gl=KR&x={x}&y={y}&z={z}"
+          attribution='© Google Maps'
+          subdomains={['0','1','2','3']}
+          maxZoom={20}
           tileSize={256}
         />
 
