@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback, useState } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import {
   MapContainer,
   TileLayer,
@@ -8,7 +8,7 @@ import {
   useMapEvents,
 } from 'react-leaflet';
 import L from 'leaflet';
-import useDispatchStore, { COURSE_COLORS, MAX_LOAD_AMOUNT, PEAK_RATIO_THRESHOLD } from '../store/dispatchStore';
+import useDispatchStore, { MAX_LOAD_AMOUNT, PEAK_RATIO_THRESHOLD } from '../store/dispatchStore';
 import { isPointInPolygon, LOGISTICS_CENTER } from '../utils/geocoding';
 
 // Leaflet 기본 아이콘 이미지 경로 수동 설정
@@ -20,15 +20,23 @@ L.Icon.Default.mergeOptions({
 });
 
 /** 원형 마커 SVG 아이콘 생성 */
-function createCircleIcon(color, size = 16, selected = false, courseNo = null) {
-  const outerRing = selected ? `<circle cx="12" cy="12" r="11" fill="none" stroke="#f59e0b" stroke-width="3" opacity="0.9"/>` : '';
-  const courseLabel = courseNo != null
-    ? `<text x="12" y="16" text-anchor="middle" fill="white" font-size="9" font-weight="bold" font-family="sans-serif">${courseNo}</text>`
+function createCircleIcon(color, selected = false, courseNo = null, isClosed = false) {
+  const outerRing = selected
+    ? `<circle cx="12" cy="12" r="11" fill="none" stroke="#f59e0b" stroke-width="3" opacity="0.9"/>`
+    : '';
+  const courseLabel =
+    courseNo != null
+      ? `<text x="12" y="16" text-anchor="middle" fill="white" font-size="9" font-weight="bold" font-family="sans-serif">${courseNo}</text>`
+      : '';
+  const closedX = isClosed
+    ? `<line x1="8" y1="8" x2="16" y2="16" stroke="white" stroke-width="1.5"/>
+       <line x1="16" y1="8" x2="8" y2="16" stroke="white" stroke-width="1.5"/>`
     : '';
   const svg = `
     <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
       ${outerRing}
       <circle cx="12" cy="12" r="${selected ? 8 : 9}" fill="${color}" stroke="white" stroke-width="2"/>
+      ${closedX}
       ${courseLabel}
     </svg>
   `;
@@ -82,7 +90,7 @@ function calcLoadRate(amount) {
   return Math.min((amount / MAX_LOAD_AMOUNT) * 100, 200);
 }
 
-// ─── 올가미(Lasso) 레이어 컴포넌트 ─────────────────────────────────────
+// ─── 올가미(Lasso) 레이어 ─────────────────────────────────────────────
 
 function LassoLayer({ onSelectionChange }) {
   const map = useMap();
@@ -92,16 +100,9 @@ function LassoLayer({ onSelectionChange }) {
   const polygonRef = useRef(null);
   const { isLassoMode, stores } = useDispatchStore();
 
-  // 레이어 정리
   const cleanup = useCallback(() => {
-    if (polylineRef.current) {
-      map.removeLayer(polylineRef.current);
-      polylineRef.current = null;
-    }
-    if (polygonRef.current) {
-      map.removeLayer(polygonRef.current);
-      polygonRef.current = null;
-    }
+    if (polylineRef.current) { map.removeLayer(polylineRef.current); polylineRef.current = null; }
+    if (polygonRef.current) { map.removeLayer(polygonRef.current); polygonRef.current = null; }
     points.current = [];
   }, [map]);
 
@@ -114,10 +115,7 @@ function LassoLayer({ onSelectionChange }) {
       map.dragging.enable();
       cleanup();
     }
-    return () => {
-      map.getContainer().style.cursor = '';
-      map.dragging.enable();
-    };
+    return () => { map.getContainer().style.cursor = ''; map.dragging.enable(); };
   }, [isLassoMode, map, cleanup]);
 
   useMapEvents({
@@ -127,54 +125,35 @@ function LassoLayer({ onSelectionChange }) {
       points.current = [[e.latlng.lat, e.latlng.lng]];
       cleanup();
       polylineRef.current = L.polyline(points.current, {
-        color: '#3b82f6',
-        weight: 2,
-        dashArray: '6 3',
-        opacity: 0.9,
+        color: '#3b82f6', weight: 2, dashArray: '6 3', opacity: 0.9,
       }).addTo(map);
     },
     mousemove(e) {
       if (!isLassoMode || !isDrawing.current) return;
       points.current.push([e.latlng.lat, e.latlng.lng]);
-      if (polylineRef.current) {
-        polylineRef.current.setLatLngs(points.current);
-      }
+      if (polylineRef.current) polylineRef.current.setLatLngs(points.current);
     },
     mouseup() {
       if (!isLassoMode || !isDrawing.current) return;
       isDrawing.current = false;
+      if (points.current.length < 3) { cleanup(); return; }
 
-      if (points.current.length < 3) {
-        cleanup();
-        return;
-      }
-
-      // 닫힌 다각형으로 변환
       const closedPoints = [...points.current, points.current[0]];
-      if (polylineRef.current) map.removeLayer(polylineRef.current);
-      polylineRef.current = null;
+      if (polylineRef.current) { map.removeLayer(polylineRef.current); polylineRef.current = null; }
 
       polygonRef.current = L.polygon(closedPoints, {
-        color: '#3b82f6',
-        fillColor: '#3b82f6',
-        fillOpacity: 0.1,
-        weight: 2,
-        dashArray: '6 3',
+        color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.1, weight: 2, dashArray: '6 3',
       }).addTo(map);
 
-      // 다각형 내부의 매장 탐색
+      // 종결 매장 제외하고 내부 매장 감지
       const selected = stores
-        .filter((s) => isPointInPolygon({ lat: s.lat, lng: s.lng }, points.current))
+        .filter((s) => !s.isClosed && isPointInPolygon({ lat: s.lat, lng: s.lng }, points.current))
         .map((s) => s.id);
 
       onSelectionChange(selected);
 
-      // 3초 후 다각형 자동 제거
       setTimeout(() => {
-        if (polygonRef.current) {
-          map.removeLayer(polygonRef.current);
-          polygonRef.current = null;
-        }
+        if (polygonRef.current) { map.removeLayer(polygonRef.current); polygonRef.current = null; }
       }, 3000);
     },
   });
@@ -182,7 +161,7 @@ function LassoLayer({ onSelectionChange }) {
   return null;
 }
 
-// ─── 확정 코스 폴리라인 ───────────────────────────────────────────────
+// ─── 확정 코스 폴리라인 ──────────────────────────────────────────────
 
 function CoursePolylines() {
   const map = useMap();
@@ -192,16 +171,10 @@ function CoursePolylines() {
   useEffect(() => {
     linesRef.current.forEach((l) => map.removeLayer(l));
     linesRef.current = [];
-
     confirmedCourses.forEach((course) => {
       if (course.stores.length < 2) return;
       const latlngs = course.stores.map((s) => [s.lat, s.lng]);
-      const line = L.polyline(latlngs, {
-        color: course.color,
-        weight: 2.5,
-        opacity: 0.7,
-        dashArray: '8 4',
-      }).addTo(map);
+      const line = L.polyline(latlngs, { color: course.color, weight: 2.5, opacity: 0.7, dashArray: '8 4' }).addTo(map);
       linesRef.current.push(line);
     });
   }, [confirmedCourses, map]);
@@ -209,13 +182,12 @@ function CoursePolylines() {
   return null;
 }
 
-// ─── 매장 마커 컴포넌트 ───────────────────────────────────────────────
+// ─── 매장 마커 컴포넌트 ──────────────────────────────────────────────
 
 function StoreMarkers() {
   const { stores, selectedStoreIds, isWeekendMode, confirmedCourses, toggleStoreSelection } =
     useDispatchStore();
 
-  // 어느 코스에 속하는지 맵 생성
   const storeCourseMap = {};
   confirmedCourses.forEach((course) => {
     course.stores.forEach((s) => {
@@ -226,21 +198,30 @@ function StoreMarkers() {
   return stores.map((store) => {
     const isSelected = selectedStoreIds.has(store.id);
     const courseInfo = storeCourseMap[store.id];
-    const isPeak = store.saturdaySales > 0 && store.saturdaySales / store.avgDailySales >= PEAK_RATIO_THRESHOLD;
+    const isPeak =
+      store.saturdaySales > 0 &&
+      store.avgDailySales > 0 &&
+      store.saturdaySales / store.avgDailySales >= PEAK_RATIO_THRESHOLD;
+    const isClosed = store.isClosed;
 
     let color;
-    if (courseInfo) {
+    if (isClosed) {
+      color = '#64748b'; // 종결: 회색
+    } else if (courseInfo) {
       color = courseInfo.color;
     } else if (isWeekendMode && isPeak) {
-      color = '#ef4444';
+      color = '#ef4444'; // 주말모드 피크: 빨강
     } else if (isPeak) {
-      color = '#f97316';
+      color = '#f97316'; // 평일 피크: 주황
     } else {
-      color = '#0d9488';
+      color = '#0d9488'; // 일반: 청록
     }
 
-    const icon = createCircleIcon(color, 16, isSelected, courseInfo?.no);
+    const icon = createCircleIcon(color, isSelected, courseInfo?.no, isClosed);
     const currentSales = isWeekendMode ? store.saturdaySales : store.avgDailySales;
+    const peakRatio = store.avgDailySales > 0
+      ? Math.round((store.saturdaySales / store.avgDailySales - 1) * 100)
+      : 0;
 
     return (
       <Marker
@@ -248,50 +229,77 @@ function StoreMarkers() {
         position={[store.lat, store.lng]}
         icon={icon}
         eventHandlers={{
-          click: () => toggleStoreSelection(store.id),
+          click: () => {
+            if (!isClosed) toggleStoreSelection(store.id);
+          },
         }}
       >
         <Popup className="store-popup">
-          <div className="min-w-[200px] p-3">
-            <div className="flex items-center justify-between mb-2">
-              <span className="font-bold text-slate-800 text-sm">{store.name}</span>
-              {isPeak && (
-                <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-medium">
-                  ⚡ 피크
-                </span>
-              )}
-              {courseInfo && (
-                <span className="text-xs px-2 py-0.5 rounded-full font-medium text-white"
-                  style={{ background: courseInfo.color }}>
-                  코스 {courseInfo.no}
-                </span>
-              )}
-            </div>
-            <div className="text-xs text-slate-500 mb-2 leading-relaxed">{store.address}</div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="bg-slate-100 rounded-lg p-2">
-                <div className="text-slate-400 mb-0.5">일평균 물량</div>
-                <div className="font-bold text-slate-700">{formatMoney(store.avgDailySales)}</div>
+          <div className="min-w-[220px] p-3">
+            {/* 매장명 + 상태 배지 */}
+            <div className="flex items-start justify-between mb-2 gap-2">
+              <span className="font-bold text-slate-800 text-sm leading-tight">{store.name}</span>
+              <div className="flex gap-1 flex-shrink-0">
+                {isClosed && (
+                  <span className="text-[10px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-full font-medium">⛔ 종결</span>
+                )}
+                {!isClosed && isPeak && (
+                  <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-medium">⚡ 피크</span>
+                )}
+                {courseInfo && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium text-white"
+                    style={{ background: courseInfo.color }}>코스 {courseInfo.no}</span>
+                )}
               </div>
-              <div className={`rounded-lg p-2 ${isPeak ? 'bg-red-50' : 'bg-slate-100'}`}>
-                <div className={`mb-0.5 ${isPeak ? 'text-red-400' : 'text-slate-400'}`}>토요일 물량</div>
-                <div className={`font-bold ${isPeak ? 'text-red-600' : 'text-slate-700'}`}>
+            </div>
+
+            {/* 주소 */}
+            <div className="text-xs text-slate-500 mb-2.5 leading-relaxed">{store.address}</div>
+
+            {/* 매출 정보 */}
+            <div className="grid grid-cols-2 gap-2 text-xs mb-2">
+              <div className={`rounded-lg p-2 ${isWeekendMode ? 'bg-slate-100' : 'bg-teal-50 border border-teal-100'}`}>
+                <div className="text-slate-400 mb-0.5">일평균 매출</div>
+                <div className={`font-bold ${isWeekendMode ? 'text-slate-600' : 'text-teal-700'}`}>
+                  {store.avgDailySales ? formatMoney(store.avgDailySales) : '-'}
+                </div>
+              </div>
+              <div className={`rounded-lg p-2 ${isWeekendMode ? 'bg-orange-50 border border-orange-100' : isPeak ? 'bg-red-50' : 'bg-slate-100'}`}>
+                <div className={`mb-0.5 ${isWeekendMode ? 'text-orange-500' : isPeak ? 'text-red-400' : 'text-slate-400'}`}>토요일 매출</div>
+                <div className={`font-bold ${isWeekendMode ? 'text-orange-700' : isPeak ? 'text-red-600' : 'text-slate-700'}`}>
                   {store.saturdaySales ? formatMoney(store.saturdaySales) : '-'}
                 </div>
               </div>
             </div>
-            {isPeak && (
-              <div className="mt-2 text-xs text-orange-600 bg-orange-50 rounded p-1.5">
-                ⚠ 주말 매출이 평일 대비{' '}
-                <strong>{Math.round((store.saturdaySales / store.avgDailySales - 1) * 100)}%</strong>{' '}
-                급증
+
+            {/* 이번달 총합 */}
+            {store.totalMonthlySales > 0 && (
+              <div className="bg-slate-50 rounded-lg p-2 text-xs mb-2">
+                <div className="text-slate-400 mb-0.5">이번달 총 매출</div>
+                <div className="font-bold text-slate-700">{formatMoney(store.totalMonthlySales)}</div>
               </div>
             )}
-            <div className={`mt-2 text-xs px-2 py-1.5 rounded-lg text-center font-semibold ${
-              isSelected ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'
-            }`}>
-              {isSelected ? '✓ 선택됨 (클릭하여 해제)' : '클릭하여 선택'}
-            </div>
+
+            {/* 피크 경고 */}
+            {!isClosed && isPeak && (
+              <div className="text-xs text-orange-600 bg-orange-50 rounded-lg p-1.5 mb-2">
+                ⚠ 주말 매출이 평일 대비 <strong>+{peakRatio}%</strong> 급증
+              </div>
+            )}
+
+            {/* 선택 상태 */}
+            {!isClosed && (
+              <div className={`text-xs px-2 py-1.5 rounded-lg text-center font-semibold cursor-pointer ${
+                isSelected ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'
+              }`}>
+                {isSelected ? '✓ 선택됨 (클릭하여 해제)' : '클릭하여 선택'}
+              </div>
+            )}
+            {isClosed && (
+              <div className="text-xs px-2 py-1.5 rounded-lg text-center text-slate-400 bg-slate-100">
+                종결된 매장입니다
+              </div>
+            )}
           </div>
         </Popup>
       </Marker>
@@ -299,16 +307,12 @@ function StoreMarkers() {
   });
 }
 
-// ─── 기사 차고지 마커 ─────────────────────────────────────────────────
+// ─── 기사 차고지 마커 ────────────────────────────────────────────────
 
 function DriverMarkers() {
   const { drivers } = useDispatchStore();
   return drivers.map((driver) => (
-    <Marker
-      key={driver.id}
-      position={[driver.lat, driver.lng]}
-      icon={createGarageIcon()}
-    >
+    <Marker key={driver.id} position={[driver.lat, driver.lng]} icon={createGarageIcon()}>
       <Popup>
         <div className="p-2 min-w-[140px]">
           <div className="font-bold text-sm text-slate-800">{driver.name}</div>
@@ -320,17 +324,15 @@ function DriverMarkers() {
   ));
 }
 
-// ─── 지도 초기화 컴포넌트 ──────────────────────────────────────────────
+// ─── 지도 초기화 ────────────────────────────────────────────────────
 
 function MapInitializer() {
   const map = useMap();
-  useEffect(() => {
-    setTimeout(() => map.invalidateSize(), 100);
-  }, [map]);
+  useEffect(() => { setTimeout(() => map.invalidateSize(), 100); }, [map]);
   return null;
 }
 
-// ─── 메인 MapDashboard ─────────────────────────────────────────────────
+// ─── 메인 MapDashboard ──────────────────────────────────────────────
 
 export default function MapDashboard() {
   const {
@@ -343,13 +345,10 @@ export default function MapDashboard() {
   } = useDispatchStore();
 
   const handleLassoSelection = useCallback(
-    (ids) => {
-      setSelectedStoreIds(ids);
-    },
+    (ids) => { setSelectedStoreIds(ids); },
     [setSelectedStoreIds]
   );
 
-  // 선택된 매장 적재율 계산
   const selectedStores = stores.filter((s) => selectedStoreIds.has(s.id));
   const totalAmount = selectedStores.reduce(
     (sum, s) => sum + (isWeekendMode ? s.saturdaySales : s.avgDailySales),
@@ -357,29 +356,32 @@ export default function MapDashboard() {
   );
   const loadRate = calcLoadRate(totalAmount);
 
+  // 활성 매장 수 (종결 제외)
+  const activeCount = stores.filter((s) => !s.isClosed).length;
+  const closedCount = stores.filter((s) => s.isClosed).length;
+
   return (
     <div className="relative w-full h-full">
       <MapContainer
-        center={[LOGISTICS_CENTER.lat, LOGISTICS_CENTER.lng]}
-        zoom={11}
+        center={[37.45, 127.00]}
+        zoom={10}
         style={{ width: '100%', height: '100%' }}
         zoomControl={true}
-        attributionControl={false}
+        attributionControl={true}
       >
+        {/* Google Maps — 한국어(hl=ko) 설정으로 네이버 스타일과 유사한 한글 지도 */}
         <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
-          subdomains="abcd"
-          maxZoom={19}
+          url="https://mt{s}.google.com/vt/lyrs=m&hl=ko&gl=KR&x={x}&y={y}&z={z}"
+          attribution='© Google Maps'
+          subdomains={['0','1','2','3']}
+          maxZoom={20}
+          tileSize={256}
         />
 
         <MapInitializer />
 
         {/* 물류센터 마커 */}
-        <Marker
-          position={[LOGISTICS_CENTER.lat, LOGISTICS_CENTER.lng]}
-          icon={DEPOT_ICON}
-        >
+        <Marker position={[LOGISTICS_CENTER.lat, LOGISTICS_CENTER.lng]} icon={DEPOT_ICON}>
           <Popup>
             <div className="p-2">
               <div className="font-bold text-sm">🏭 {LOGISTICS_CENTER.name}</div>
@@ -401,13 +403,11 @@ export default function MapDashboard() {
         <LassoLayer onSelectionChange={handleLassoSelection} />
       </MapContainer>
 
-      {/* 지도 위 오버레이 정보 */}
+      {/* ── 지도 위 오버레이 ── */}
       <div className="absolute top-3 left-3 z-[1000] space-y-2 pointer-events-none">
         {/* 모드 배지 */}
         <div className={`px-3 py-1.5 rounded-full text-xs font-bold shadow-lg ${
-          isWeekendMode
-            ? 'bg-orange-500 text-white'
-            : 'bg-teal-600 text-white'
+          isWeekendMode ? 'bg-orange-500 text-white' : 'bg-teal-600 text-white'
         }`}>
           {isWeekendMode ? '🗓 주말(토요일) 모드' : '📅 평일 모드'}
         </div>
@@ -421,60 +421,75 @@ export default function MapDashboard() {
 
         {/* 선택 현황 */}
         {selectedStoreIds.size > 0 && (
-          <div className="bg-slate-900/90 text-white px-3 py-1.5 rounded-lg text-xs shadow-lg backdrop-blur-sm">
-            <span className="text-amber-400 font-bold">{selectedStoreIds.size}개</span> 선택됨 ·{' '}
-            <span className={`font-bold ${loadRate > 100 ? 'text-red-400' : loadRate >= 90 ? 'text-green-400' : 'text-slate-300'}`}>
-              {formatMoney(totalAmount)}
+          <div className="bg-white/90 text-slate-800 px-3 py-1.5 rounded-lg text-xs shadow-lg backdrop-blur-sm border border-slate-200">
+            <span className="text-amber-600 font-bold">{selectedStoreIds.size}개</span> 선택됨 ·{' '}
+            <span className={`font-bold ${loadRate > 100 ? 'text-red-500' : loadRate >= 90 ? 'text-green-600' : 'text-slate-700'}`}>
+              {totalAmount.toLocaleString('ko-KR')}원
             </span>
           </div>
         )}
       </div>
 
-      {/* 범례 */}
-      <div className="absolute bottom-6 left-3 z-[1000] bg-slate-900/90 backdrop-blur-sm rounded-xl p-3 shadow-xl text-xs">
-        <div className="font-semibold text-white mb-2">범례</div>
+      {/* ── 범례 ── */}
+      <div className="absolute bottom-6 left-3 z-[1000] bg-white/95 backdrop-blur-sm rounded-xl p-3 shadow-xl text-xs border border-slate-200">
+        <div className="font-bold text-slate-700 mb-2">범례</div>
         <div className="space-y-1.5">
-          <div className="flex items-center gap-2">
-            <div className="w-3.5 h-3.5 rounded-full bg-teal-500 border-2 border-white flex-shrink-0" />
-            <span className="text-slate-300">일반 매장</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3.5 h-3.5 rounded-full bg-orange-500 border-2 border-white flex-shrink-0" />
-            <span className="text-slate-300">피크 매장 (주말 +30%↑)</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3.5 h-3.5 rounded-full bg-red-500 border-2 border-white flex-shrink-0" />
-            <span className="text-slate-300">피크 매장 (주말 모드)</span>
-          </div>
+          <LegendItem color="#0d9488" label="일반 매장" />
+          <LegendItem color="#f97316" label="피크 매장 (주말 +30%↑)" />
+          <LegendItem color="#ef4444" label="피크 매장 (주말 모드)" />
+          <LegendItem color="#64748b" label="종결 매장" isX />
           <div className="flex items-center gap-2">
             <div className="w-3.5 h-3.5 rounded-full border-2 border-amber-400 bg-teal-500 flex-shrink-0" />
-            <span className="text-slate-300">선택된 매장</span>
+            <span className="text-slate-600">선택된 매장</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-lg leading-none">🏭</span>
-            <span className="text-slate-300">물류센터 (화성)</span>
+            <span className="text-base leading-none">🏭</span>
+            <span className="text-slate-600">물류센터 (화성)</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-lg leading-none">🚚</span>
-            <span className="text-slate-300">기사 차고지</span>
+            <span className="text-base leading-none">🚚</span>
+            <span className="text-slate-600">기사 차고지</span>
           </div>
           {confirmedCourses.length > 0 && (
             <>
-              <div className="border-t border-slate-700 my-1" />
-              {confirmedCourses.slice(0, 4).map((c) => (
+              <div className="border-t border-slate-200 my-1" />
+              {confirmedCourses.slice(0, 5).map((c) => (
                 <div key={c.id} className="flex items-center gap-2">
-                  <div className="w-3.5 h-3.5 rounded-full border-2 border-white flex-shrink-0"
+                  <div className="w-3.5 h-3.5 rounded-full border border-white shadow-sm flex-shrink-0"
                     style={{ background: c.color }} />
-                  <span className="text-slate-300">코스 {c.courseNo} · {c.driverName}</span>
+                  <span className="text-slate-600">코스 {c.courseNo} · {c.driverName}</span>
                 </div>
               ))}
-              {confirmedCourses.length > 4 && (
-                <div className="text-slate-500">+{confirmedCourses.length - 4}개 코스</div>
+              {confirmedCourses.length > 5 && (
+                <div className="text-slate-400">+{confirmedCourses.length - 5}개 코스</div>
               )}
             </>
           )}
         </div>
+
+        {/* 매장 통계 */}
+        <div className="border-t border-slate-200 mt-2 pt-2 text-[10px] text-slate-500 space-y-0.5">
+          <div>활성 매장: <span className="text-teal-600 font-semibold">{activeCount}개</span></div>
+          {closedCount > 0 && <div>종결 매장: <span className="text-slate-400">{closedCount}개</span></div>}
+        </div>
       </div>
+    </div>
+  );
+}
+
+function LegendItem({ color, label, isX }) {
+  return (
+    <div className="flex items-center gap-2">
+      <div className="relative w-3.5 h-3.5 rounded-full border-2 border-white shadow-sm flex-shrink-0 flex items-center justify-center"
+        style={{ background: color }}>
+        {isX && (
+          <svg width="8" height="8" viewBox="0 0 8 8" className="absolute">
+            <line x1="1" y1="1" x2="7" y2="7" stroke="white" strokeWidth="1.5" />
+            <line x1="7" y1="1" x2="1" y2="7" stroke="white" strokeWidth="1.5" />
+          </svg>
+        )}
+      </div>
+      <span className="text-slate-600">{label}</span>
     </div>
   );
 }
